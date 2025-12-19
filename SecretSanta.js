@@ -42,70 +42,69 @@ SecretSanta.prototype.add = function ( name ) {
 
 SecretSanta.prototype.generate = function () {
 
-    var pairings = Object.create( null );
-    var candidatePairings = Object.create( null );
+    var maxAttempts = 1000;
+    var attempt = 0;
 
-    this.names.forEach( function ( name ) {
+    // Helper function to check if a circular arrangement respects all constraints
+    var isValidCircle = function ( arrangement ) {
 
-        if ( Object.prototype.hasOwnProperty.call( this.enforced, name ) ) {
+        for ( var i = 0; i < arrangement.length; i++ ) {
+            var giver = arrangement[ i ];
+            var receiver = arrangement[ ( i + 1 ) % arrangement.length ];
 
-            var enforced = this.enforced[ name ];
-
-            if ( this.names.indexOf( enforced ) === -1 )
-                throw new Error( name + ' is paired with ' + enforced + ', which hasn\'t been declared as a possible pairing' );
-
-            Object.keys( pairings ).forEach( function ( name ) {
-
-                if ( pairings[ name ] === enforced ) {
-                    throw new Error( 'Per your rules, multiple persons are paired with ' + enforced );
+            // Check enforced pairings
+            if ( Object.prototype.hasOwnProperty.call( this.enforced, giver ) ) {
+                if ( this.enforced[ giver ] !== receiver ) {
+                    return false;
                 }
+            }
 
-            } );
+            // Check blacklists
+            if ( Object.prototype.hasOwnProperty.call( this.blacklists, giver ) ) {
+                if ( this.blacklists[ giver ].indexOf( receiver ) !== -1 ) {
+                    return false;
+                }
+            }
 
-            candidatePairings[ name ] = [ this.enforced[ name ] ];
-
-        } else {
-
-            var candidates = _.difference( this.names, [ name ] );
-
-            if ( Object.prototype.hasOwnProperty.call( this.blacklists, name ) )
-                candidates = _.difference( candidates, this.blacklists[ name ] );
-
-            candidatePairings[ name ] = candidates;
-
+            // Check that person doesn't give to themselves (shouldn't happen in circle but be safe)
+            if ( giver === receiver ) {
+                return false;
+            }
         }
 
+        return true;
+
+    }.bind( this );
+
+    // Validate enforced pairings exist in names list
+    Object.keys( this.enforced ).forEach( function ( name ) {
+        var enforced = this.enforced[ name ];
+        if ( this.names.indexOf( enforced ) === -1 ) {
+            throw new Error( name + ' is paired with ' + enforced + ', which hasn\'t been declared as a possible pairing' );
+        }
     }, this );
 
-    var findNextGifter = function () {
+    // Try to find a valid circular arrangement
+    while ( attempt < maxAttempts ) {
+        attempt++;
 
-        var names = Object.keys( candidatePairings );
+        // Shuffle the names to create a random circular arrangement
+        var arrangement = _.shuffle( this.names.slice() );
 
-        var minCandidateCount = _.min( names.map( function ( name ) { return candidatePairings[ name ].length; } ) );
-        var potentialGifters = names.filter( function ( name ) { return candidatePairings[ name ].length === minCandidateCount; } );
-
-        return _.sample( potentialGifters );
-
-    };
-
-    while ( Object.keys( candidatePairings ).length > 0 ) {
-
-        var name = findNextGifter();
-
-        if ( candidatePairings[ name ].length === 0 )
-            throw new Error('We haven\'t been able to find a match for ' + name + '! Press "Generate" to try again and, if it still doesn\'t work, try removing some exclusions from your rules. Sorry for the inconvenience!');
-
-        var pairing = _.sample( candidatePairings[ name ] );
-        delete candidatePairings[ name ];
-
-        Object.keys( candidatePairings ).forEach( function ( name ) {
-            candidatePairings[ name ] = _.without( candidatePairings[ name ], pairing );
-        } );
-
-        pairings[ name ] = pairing;
-
+        // Check if this arrangement satisfies all constraints
+        if ( isValidCircle( arrangement ) ) {
+            // Build the pairings object from the circular arrangement
+            var pairings = Object.create( null );
+            for ( var i = 0; i < arrangement.length; i++ ) {
+                var giver = arrangement[ i ];
+                var receiver = arrangement[ ( i + 1 ) % arrangement.length ];
+                pairings[ giver ] = receiver;
+            }
+            return pairings;
+        }
     }
 
-    return pairings;
+    // If we couldn't find a valid arrangement after many attempts
+    throw new Error( 'Could not generate a valid circular Secret Santa arrangement after ' + maxAttempts + ' attempts. Your constraints (enforced pairings or blacklists) may be too restrictive. Try removing some rules and try again.' );
 
 };
